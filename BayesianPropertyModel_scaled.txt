@@ -1,0 +1,47 @@
+
+# Standardize the continuous data:
+data {
+  SalePrice_sd <- sd(SalePrice)
+  for (i in 1:Ntotal) {
+    zSalePrice[i] <- SalePrice[i] / SalePrice_sd  # Standardizing SalePrice
+  }
+  
+  Area_sd <- sd(Area)
+  for (i in 1:Ntotal) {
+    zArea[i] <- Area[i] / Area_sd  # Standardizing Area
+  }
+}
+
+# Specify the model for scaled data:
+model {
+  for (i in 1:Ntotal) {
+    # Likelihood (Gamma distribution for scaled sale price)
+    zSalePrice[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
+    
+    # Model for mu (mean sale price on standardized scale)
+    mu[i] <- zbeta0 + zbeta_Area * zArea[i] + 
+             beta_Bedrooms * Bedrooms[i] + 
+             beta_Bathrooms * Bathrooms[i] + 
+             beta_CarParks * CarParks[i] + 
+             beta_PropertyType * PropertyType[i]
+  }
+  
+  # Priors for scaled continuous variables:
+  zbeta0 ~ dnorm(0, 1/2^2)  # Prior for intercept on standardized scale
+  zbeta_Area ~ dnorm(90 / Area_sd, 1 / (10^2 / Area_sd^2))  # Scaled prior for Area
+  
+  # Priors for non-scaled discrete variables:
+  beta_Bedrooms ~ dnorm(100000, 0.00001)  # Weak prior for Bedrooms
+  beta_Bathrooms ~ dnorm(0, 0.001)  # Non-informative prior for Bathrooms
+  beta_CarParks ~ dnorm(120000, 0.001)  # Strong prior for CarParks
+  beta_PropertyType ~ dnorm(-150000, 0.001)  # Strong prior for PropertyType
+
+  # Priors for the variance of scaled sale price:
+  zVar ~ dgamma(0.01, 0.01)
+  
+  # Transform coefficients back to the original scale:
+  beta0 <- zbeta0 * SalePrice_sd
+  beta_Area <- zbeta_Area * Area_sd * SalePrice_sd
+  tau <- zVar * (SalePrice_sd)^2
+}
+

@@ -1,0 +1,24 @@
+
+  model {
+    for (i in 1:N) {
+      y[i] ~ dnorm(mu[i], tau)  # Normal distribution for SalePrice
+      
+      mu[i] <- beta0 + beta1 * Area[i] + beta2 * Bedrooms[i] + beta3 * Bathrooms[i] +
+               beta4 * CarParks[i] + beta5 * PropEffect[i]
+      
+      # PropertyType is a Bernoulli variable (categorical with 0 and 1)
+      PropEffect[i] <- beta5 * PropertyType[i]
+    }
+
+    # Priors for regression coefficients
+    beta0 ~ dnorm(0, 1.0E-6)
+    beta1 ~ dnorm(90, 0.01)
+    beta2 ~ dnorm(100000, 1.0E-4)
+    beta3 ~ dnorm(0, 1.0E-6)
+    beta4 ~ dnorm(120000, 0.01)
+    beta5 ~ dnorm(-150000, 0.001)  # PropertyType effect modeled with normal distribution
+
+    tau <- 1 / sigma2  # Precision (inverse of variance)
+    sigma2 ~ dgamma(1, 1)  # Gamma distribution for variance
+  }
+  

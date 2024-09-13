@@ -1,0 +1,39 @@
+
+model {
+  for (i in 1:Ntotal) {
+    # Likelihood (Gamma distribution for sale price)
+    SalePrice[i] ~ dgamma(mu[i]^2 / sigma2, mu[i] / sigma2)
+
+    # Model for mu (mean sale price)
+    mu[i] <- beta0 +
+             beta_Area * Area[i] +
+             beta_Bedrooms * Bedrooms[i] +
+             beta_Bathrooms * Bathrooms[i] +
+             beta_CarParks * CarParks[i] +
+             beta_PropertyType * PropertyType[i]
+
+    # Distributions for predictors
+    Area[i] ~ dgamma(2, 0.001)  # Gamma for area (0 to infinity)
+    Bedrooms[i] ~ dpois(lambda_bedrooms)  # Poisson for bedrooms (discrete count)
+    Bathrooms[i] ~ dpois(lambda_bathrooms)  # Poisson for bathrooms (discrete count)
+    CarParks[i] ~ dpois(lambda_carparks)  # Poisson for car parks (discrete count)
+    PropertyType[i] ~ dbern(0.5)  # Bernoulli for property type (binary)
+  }
+
+  # Priors for coefficients
+  beta0 ~ dnorm(0, 0.001)  # Non-informative prior for intercept
+  beta_Area ~ dnorm(90, 0.01)  # Prior based on expert knowledge for area
+  beta_Bedrooms ~ dnorm(100000, 0.00001)  # Weak prior for bedrooms
+  beta_Bathrooms ~ dnorm(0, 0.001)  # No prior knowledge for bathrooms
+  beta_CarParks ~ dnorm(120000, 0.001)  # Strong prior for car parks
+  beta_PropertyType ~ dnorm(-150000, 0.001)  # Strong prior for property type
+
+  # Priors for the lambda (Poisson rate) of count variables
+  lambda_bedrooms ~ dgamma(2, 0.001)
+  lambda_bathrooms ~ dgamma(2, 0.001)
+  lambda_carparks ~ dgamma(2, 0.001)
+
+  # Prior for variance (sigma squared) for sale price
+  sigma2 ~ dgamma(0.01, 0.01)
+}
+
