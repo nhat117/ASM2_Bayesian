@@ -1,12 +1,18 @@
 # Install necessary libraries if not already installed
 # install.packages("rjags")
 # install.packages("coda")
-#install.packages("psych")  # For descriptive statistics
+# install.packages("psych")  # For descriptive statistics
+# install.packages("ggplot2")  # For plotting histograms
+
+# Close all open graphics windows
+graphics.off()
 
 # Load necessary libraries
 library(rjags)
 library(coda)
 library(psych)  # For descriptive statistics
+library(ggplot2)  # For plotting histograms
+source('./DBDA2E-utilities.R')
 
 # Load your dataset (you can modify the path as needed)
 file_path <- './Assignment2PropertyPrices.csv'
@@ -14,7 +20,7 @@ data <- read.csv(file_path)
 
 # Randomly sample 500 rows from the dataset
 set.seed(123)  # Set seed for reproducibility
-data <- data[sample(nrow(data), 500), ]
+data <- data[sample(nrow(data), 1000), ]
 
 # Rename columns for easier reference
 colnames(data) <- c('SalePrice', 'Area', 'Bedrooms', 'Bathrooms', 'CarParks', 'PropertyType')
@@ -24,6 +30,26 @@ data$SalePrice <- data$SalePrice * 100000
 
 # Descriptive statistics
 print(describe(data))  # Displays descriptive statistics of the dataset
+
+#===============================================================================
+# Plot histograms for each column
+plot_histograms <- function(data) {
+  # Loop through each column and plot histogram
+  for (col_name in colnames(data)) {
+    # Check if the column is numeric
+    if (is.numeric(data[[col_name]])) {
+      # Create histogram using ggplot2
+      p <- ggplot(data, aes_string(x = col_name)) + 
+        geom_histogram(binwidth = 30, fill = 'skyblue', color = 'black') +
+        labs(title = paste("Histogram of", col_name), x = col_name, y = "Frequency") +
+        theme_minimal()
+      print(p)  # Display the histogram
+    }
+  }
+}
+
+# Plot histograms of all numeric columns
+plot_histograms(data)
 
 #===============================================================================
 # Function to generate MCMC samples using JAGS
@@ -45,8 +71,11 @@ genMCMC <- function(data, numSavedSteps = 1500, adaptSteps = 1500, burnInSteps =
   jags_model_code <- "
   model {
     for (i in 1:N) {
-      y[i] ~ dnorm(mu[i], tau)  # Normal distribution for SalePrice
-      
+      # SalePrice and Area follow Gamma distribution
+      y[i] ~ dgamma(shape_y, rate_y)
+      Area[i] ~ dgamma(shape_area, rate_area)
+
+      # Linear model for the mean of SalePrice
       mu[i] <- beta0 + beta1 * Area[i] + beta2 * Bedrooms[i] + beta3 * Bathrooms[i] +
                beta4 * CarParks[i] + beta5 * PropEffect[i]
       
@@ -62,8 +91,13 @@ genMCMC <- function(data, numSavedSteps = 1500, adaptSteps = 1500, burnInSteps =
     beta4 ~ dnorm(120000, 0.01)
     beta5 ~ dnorm(-150000, 0.001)  # PropertyType effect modeled with normal distribution
 
-    tau <- 1 / sigma2  # Precision (inverse of variance)
-    sigma2 ~ dgamma(1, 1)  # Gamma distribution for variance
+    # Gamma prior for SalePrice parameters (shape and rate)
+    shape_y ~ dgamma(1, 1)
+    rate_y ~ dgamma(1, 1)
+    
+    # Gamma prior for Area parameters (shape and rate)
+    shape_area ~ dgamma(1, 1)
+    rate_area ~ dgamma(1, 1)
   }
   "
   
@@ -118,26 +152,13 @@ plotMCMC <- function(codaSamples, data, saveName = NULL) {
 }
 
 #===============================================================================
-# Function to generate diagnostic plots (trace, density, autocorrelation)
-diagMCMC <- function(codaSamples, parName) {
-  parValues <- as.matrix(codaSamples)[, parName]
-  
-  # Trace plot
-  plot(parValues, type = "l", main = paste("Trace plot of", parName), ylab = parName)
-  
-  # Density plot
-  plot(density(parValues), main = paste("Density plot of", parName), xlab = parName)
-  
-  # Autocorrelation plot
-  acf(parValues, main = paste("Autocorrelation of", parName))
-}
-
-#===============================================================================
 # Generate MCMC samples
-codaSamples <- genMCMC(data, numSavedSteps = 1500, adaptSteps = 1500, burnInSteps = 5000, thinSteps = 11, nChains = 2)
+codaSamples <- genMCMC(data, numSavedSteps = 2000, adaptSteps = 2000, burnInSteps = 5000, thinSteps = 11, nChains = 2)
 
 # Summarize MCMC samples
 summaryInfo <- smryMCMC(codaSamples)
+
+show(summaryInfo)
 
 # Diagnostic plots for beta0
 diagMCMC(codaSamples, parName="beta0")
@@ -158,4 +179,4 @@ diagMCMC(codaSamples, parName="beta4")
 diagMCMC(codaSamples, parName="beta5")
 
 # Diagnostic plots for sigma2
-diagMCMC(codaSamples, parName="sigma2")
+#diagMCMC(codaSamples, parName="sigma2")

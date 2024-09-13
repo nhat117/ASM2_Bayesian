@@ -1,8 +1,11 @@
 
   model {
     for (i in 1:N) {
-      y[i] ~ dnorm(mu[i], tau)  # Normal distribution for SalePrice
-      
+      # SalePrice and Area follow Gamma distribution
+      y[i] ~ dgamma(shape_y, rate_y)
+      Area[i] ~ dgamma(shape_area, rate_area)
+
+      # Linear model for the mean of SalePrice
       mu[i] <- beta0 + beta1 * Area[i] + beta2 * Bedrooms[i] + beta3 * Bathrooms[i] +
                beta4 * CarParks[i] + beta5 * PropEffect[i]
       
@@ -18,7 +21,12 @@
     beta4 ~ dnorm(120000, 0.01)
     beta5 ~ dnorm(-150000, 0.001)  # PropertyType effect modeled with normal distribution
 
-    tau <- 1 / sigma2  # Precision (inverse of variance)
-    sigma2 ~ dgamma(1, 1)  # Gamma distribution for variance
+    # Gamma prior for SalePrice parameters (shape and rate)
+    shape_y ~ dgamma(1, 1)
+    rate_y ~ dgamma(1, 1)
+    
+    # Gamma prior for Area parameters (shape and rate)
+    shape_area ~ dgamma(1, 1)
+    rate_area ~ dgamma(1, 1)
   }
   
