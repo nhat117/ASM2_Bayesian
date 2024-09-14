@@ -1,0 +1,40 @@
+
+model {
+  # Standardize the data inside the model
+  data {
+    ysd <- sd(y)
+    for (i in 1:N) {
+      zy[i] <- y[i] / ysd
+    }
+    for (j in 1:Nx) {
+      xsd[j] <- sd(x[,j])
+      for (i in 1:N) {
+        zx[i,j] <- x[i,j] / xsd[j]
+      }
+    }
+  }
+  
+  # Specify the model for standardized data
+  model {
+    for (i in 1:N) {
+      zy[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
+      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
+    }
+
+    # Priors for standardized regression coefficients
+    zbeta0 ~ dnorm(0, 1/2^2)
+    for (j in 1:Nx) {
+      zbeta[j] ~ dnorm(0, 1/4)
+    }
+
+    zVar ~ dgamma(0.01, 0.01)
+
+    # Transform back to the original scale
+    beta0 <- zbeta0 * ysd
+    for (j in 1:Nx) {
+      beta[j] <- zbeta[j] * (ysd / xsd[j])
+    }
+    tau <- zVar * (ysd^2)
+  }
+}
+

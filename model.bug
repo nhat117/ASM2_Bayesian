@@ -1,32 +1,50 @@
 
-  model {
-    for (i in 1:N) {
-      # SalePrice and Area follow Gamma distribution
-      y[i] ~ dgamma(shape_y, rate_y)
-      Area[i] ~ dgamma(shape_area, rate_area)
-
-      # Linear model for the mean of SalePrice
-      mu[i] <- beta0 + beta1 * Area[i] + beta2 * Bedrooms[i] + beta3 * Bathrooms[i] +
-               beta4 * CarParks[i] + beta5 * PropEffect[i]
-      
-      # PropertyType is a Bernoulli variable (categorical with 0 and 1)
-      PropEffect[i] <- beta5 * PropertyType[i]
-    }
-
-    # Priors for regression coefficients
-    beta0 ~ dnorm(0, 1.0E-6)
-    beta1 ~ dnorm(90, 0.01)
-    beta2 ~ dnorm(100000, 1.0E-4)
-    beta3 ~ dnorm(0, 1.0E-6)
-    beta4 ~ dnorm(120000, 0.01)
-    beta5 ~ dnorm(-150000, 0.001)  # PropertyType effect modeled with normal distribution
-
-    # Gamma prior for SalePrice parameters (shape and rate)
-    shape_y ~ dgamma(1, 1)
-    rate_y ~ dgamma(1, 1)
-    
-    # Gamma prior for Area parameters (shape and rate)
-    shape_area ~ dgamma(1, 1)
-    rate_area ~ dgamma(1, 1)
+# Standardize the data:
+data {
+  # Compute the standard deviation of the response variable
+  ysd <- sd(y)  
+  # Standardize SalePrice (response variable)
+  for (i in 1:N) {
+    zy[i] <- y[i] / ysd  # Standardized SalePrice
   }
-  
+  # Compute the standard deviations of the predictors
+  for (j in 1:Nx) {
+    xsd[j] <- sd(x[, j])  # Standard deviation of each predictor
+    # Standardize each predictor
+    for (i in 1:N) {
+      zx[i, j] <- x[i, j] / xsd[j]
+    }
+  }
+}
+
+# Specify the model for scaled data:
+model {
+  for (i in 1:N) {
+    # Scaled response follows a gamma distribution
+    zy[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
+    # Linear model for the mean of the scaled SalePrice
+    mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])  # Standardized predictors
+  }
+
+  # Priors on standardized scale for the regression coefficients
+  zbeta0 ~ dnorm(0, 1/2^2)  # Prior for intercept
+  zbeta[1] ~ dnorm(2 / xsd[1], 1 / (4 / xsd[1]^2))  # Prior for Area
+  zbeta[2] ~ dnorm(0, 1/4)  # Prior for Bedrooms
+  zbeta[3] ~ dnorm((60 / 100000) / xsd[3], 1 / (1 / xsd[3]^2))  # Prior for Bathrooms
+  zbeta[4] ~ dnorm((30 / 100000) / xsd[4], 1 / (0.1 / xsd[4]^2))  # Prior for CarParks
+  zbeta[5] ~ dnorm(-150000, 0.001)  # Prior for PropertyType effect
+
+  # Prior for variance (gamma distribution)
+  zVar ~ dgamma(0.01, 0.01)
+
+  # Transform parameters back to the original scale:
+  beta[1:Nx] <- (zbeta[1:Nx] / xsd[1:Nx]) * ysd  # Rescale beta coefficients
+  beta0 <- zbeta0 * ysd  # Rescale the intercept
+  tau <- zVar * (ysd)^2  # Rescale the variance
+
+  # Compute predictions on the original scale
+  for (i in 1:2) {
+    pred[i] <- beta0 + beta[1] * xPred[i, 1] + beta[2] * xPred[i, 2] + beta[3] * xPred[i, 3] + beta[4] * xPred[i, 4]
+  }
+}
+

@@ -1,0 +1,31 @@
+
+  data {
+    for (i in 1:Ntotal) {
+      zy[i] <- y[i] / ysd
+      for (j in 1:Nx) {
+        zx[i,j] <- x[i,j] / xsd[j]
+      }
+    }
+  }
+  model {
+    # Model for standardized data
+    for (i in 1:Ntotal) {
+      zy[i] ~ dnorm(mu[i], 1 / zVar)
+      mu[i] <- zbeta0 + inprod(zbeta[1:Nx], zx[i, 1:Nx])
+    }
+    
+    # Priors for standardized coefficients
+    zbeta0 ~ dnorm(zbeta0_prior_mean, zbeta0_prior_prec)
+    for (j in 1:Nx) {
+      zbeta[j] ~ dnorm(zbeta_prior_mean[j], zbeta_prior_prec[j])
+    }
+    zVar ~ dgamma(0.01, 0.01)
+    
+    # Transform back to original scale
+    beta0 <- zbeta0 * ysd
+    for (j in 1:Nx) {
+      beta[j] <- (zbeta[j] / xsd[j]) * ysd
+    }
+    tau <- zVar * pow(ysd, 2)
+  }
+  
