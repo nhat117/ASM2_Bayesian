@@ -84,8 +84,11 @@ plotMCMC_HD = function(codaSamples, data, xName="x", yName="y", showCurve=FALSE,
 }
 
 # Load the dataset
+# Load the CSV file
 data <- read.csv("Assignment2PropertyPrices.csv")
 
+# Randomly select 500 rows
+#data <- data[sample(1:nrow(data), 500, replace = FALSE), ]
 # Prepare standardized data for JAGS
 x <- as.matrix(data[, c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType")])
 y <- data$SalePrice
@@ -136,6 +139,60 @@ modelString = "
   }
 "
 
+model_string = modelString = "
+  data {
+    # Standardizing SalePrice
+    ysd <- sd(SalePrice)
+    for (i in 1:Ntotal) {
+      zy[i] <- SalePrice[i] / ysd
+    }
+
+    # Standardizing predictors (Area, Bedrooms, etc.)
+    for (j in 1:Nx) {
+      xsd[j] <- sd(x[, j])
+      for (i in 1:Ntotal) {
+        zx[i, j] <- x[i, j] / xsd[j]
+      }
+    }
+  }
+
+  model {
+    # Likelihood for standardized data
+    for (i in 1:Ntotal) {
+      zy[i] ~ dnorm(mu[i], tau)
+      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
+    }
+
+    # Priors for coefficients
+    zbeta0 ~ dnorm(0, 1/10^2)  # Weak prior for intercept
+
+    # Area: Strong belief, centered at 90 AUD/m²
+    zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)  # Small variance for strong belief
+
+    # Bedrooms: Weak belief, centered at 100,000 AUD/bedroom
+    zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)  # Larger variance for weak belief
+
+    # Bathrooms: No expert knowledge
+    zbeta[3] ~ dnorm(0, 1 / 10^6)  # Non-informative prior
+
+    # CarParks: Strong belief, centered at 120,000 AUD per car park
+    zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)  # Small variance for strong belief
+
+    # PropertyType: Strong belief, 150,000 AUD less for units
+    zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 5000^2)  # Small variance for strong belief
+
+    # Residual variance (inverse gamma)
+    zVar ~ dgamma(0.01, 0.01)
+    tau <- 1 / zVar
+
+    # Transforming back to original scale
+    beta0 <- zbeta0 * ysd
+    for (j in 1:Nx) {
+      beta[j] <- (zbeta[j] * ysd) / xsd[j]
+    }
+  }
+"
+
 # Write out the model to a text file
 writeLines(modelString, con="BayesianModel.txt")
 # Track start time
@@ -145,11 +202,29 @@ start_time <- Sys.time()
 writeLines(modelString, con="TEMPmodel.txt")
 
 # MCMC Parameters
-adaptSteps <- 500       # Number of steps to "tune" the samplers
-burnInSteps <- 1000     # Burn-in steps
-nChains <- 2            # Number of chains
-thinSteps <- 3          # Thinning interval
-numSavedSteps <- 10000  # Number of saved steps
+#adaptSteps <- 500       # Number of steps to "tune" the samplers
+#burnInSteps <- 1000     # Burn-in steps
+#nChains <- 2            # Number of chains
+#thinSteps <- 3         # Thinning interval
+#numSavedSteps <- 10000 # Number of saved steps
+
+#adaptSteps <- 2000       # Number of steps to "tune" the samplers (lower for simpler models)
+#burnInSteps <- 5000      # Burn-in steps (check convergence diagnostics)
+#nChains <- 3             # Number of chains (increase to 3 for better diagnostics)
+#thinSteps <- 5           # Thinning interval (reduce if autocorrelation is low)
+#numSavedSteps <- 5000    # Number of saved steps (adjust based on required precision)
+
+#adaptSteps <- 5000        # Increase for more complex models
+#burnInSteps <- 5000       # Adjust based on diagnostics
+#nChains <- 4              # Increase chains for better convergence
+#thinSteps <- 1            # Adjust based on autocorrelation (lower for low autocorrelation)
+#numSavedSteps <- 10000    # Increase to get more precise estimates
+
+adaptSteps <- 10000        # Increased adaptation for complex models
+burnInSteps <- 10000       # Increased burn-in to ensure convergence
+nChains <- 4               # Four chains should be sufficient, increase if needed
+thinSteps <- 1             # Keeping thinning at 1 based on low autocorrelation
+numSavedSteps <- 15000     # More saved steps for higher precision
 nIter <- ceiling((numSavedSteps * thinSteps) / nChains)  # Total iterations
 
 # Define initial values for the chains (optional)
@@ -224,14 +299,7 @@ print(paste("Total duration of MCMC sampling:", duration))
 summaryInfo <- smryMCMC_HD(codaSamples = newCodaSamples)
 print(summaryInfo)
 
-# List of parameter names
-param_names <- c("beta0", "beta[1]", "beta[2]", "beta[3]", "beta[4]", "beta[5]", "tau")
 
-# Loop through the parameter names and run diagMCMC for each
-for (param in param_names) {
-  diagMCMC(newCodaSamples, parName = param)
-}
-e
 # Plot MCMC results using the custom plot function
 plotMCMC_HD(codaSamples = newCodaSamples, 
             data = data, 
