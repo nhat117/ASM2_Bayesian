@@ -1,0 +1,48 @@
+
+data {
+  ysd <- sd(y)
+  for (i in 1:Ntotal) {
+    zy[i] <- y[i] / ysd
+  }
+  for (j in 1:Nx) {
+    xsd[j] <- sd(x[,j])
+    for (i in 1:Ntotal) {
+      zx[i,j] <- ifelse(j == Nx, x[i,j], x[i,j] / xsd[j])
+    }
+  }
+}
+
+model {
+  for (i in 1:Ntotal) {
+    zy[i] ~ dnorm(mu[i], tau)  # Normal likelihood for SalePrice
+    mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i,1:Nx])
+  }
+
+  # Prior based on strong/weak expert knowledge
+  zbeta0 ~ dnorm(0, 1/100^2)     # Non-informative prior for intercept
+
+  # Area (strong expert knowledge, 90 AUD per m2)
+  zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)  # Small variance for strong knowledge
+  
+  # Bedrooms (weak expert knowledge, 100,000 AUD per additional bedroom)
+  zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)  # Large variance for weak knowledge
+
+  # Bathrooms (no expert knowledge)
+  zbeta[3] ~ dnorm(0, 1 / 100000^2)  # Wide non-informative prior
+
+  # CarParks (strong expert knowledge, 120,000 AUD per car park)
+  zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)  # Small variance for strong knowledge
+
+  # PropertyType (strong expert knowledge, -150,000 AUD for units)
+  zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 10000^2)  # Small variance for strong knowledge
+
+  zVar ~ dgamma(0.01, 0.001)
+
+  tau <- 1 / (zVar * (ysd)^2)
+
+  # Transform to original scale
+  beta[1:(Nx-1)] <- (zbeta[1:(Nx-1)] / xsd[1:(Nx-1)]) * ysd
+  beta[Nx] <- zbeta[Nx] * ysd
+  beta0 <- zbeta0 * ysd
+}
+

@@ -1,4 +1,4 @@
-SalePrice(100K),Area,Bedrooms,Bathrooms,CarParks,PropertyType
+SalePrice,Area,Bedrooms,Bathrooms,CarParks,PropertyType
 3.85,363,3,2,1,0
 5.66,636,3,2,2,1
 5.675,1007,2,2,1,1

@@ -1,0 +1,26 @@
+
+model {
+  for (i in 1:Ntotal) {
+    # Likelihood for sale price (Y follows a normal distribution)
+    y[i] ~ dnorm(mu[i], tau)
+    mu[i] <- beta0 + beta[1] * x[i, 1] + beta[2] * x[i, 2] + beta[3] * x[i, 3] + beta[4] * x[i, 4] + beta[5] * x[i, 5]
+  }
+
+  # Priors on the coefficients
+  beta0 ~ dnorm(0, 1.0E-6)  # Intercept
+  beta[1] ~ dnorm(90, 1.0E-2)  # Area (m²): Expert prior (90 AUD/m² increase)
+  beta[2] ~ dnorm(100000, 1.0E-6)  # Bedrooms: Weak prior (100,000 AUD/bedroom)
+  beta[3] ~ dnorm(0, 1.0E-6)  # Bathrooms: No expert knowledge
+  beta[4] ~ dnorm(120000, 1.0E-2)  # CarParks: Expert prior (120,000 AUD/car space)
+  beta[5] ~ dnorm(-150000, 1.0E-2)  # PropertyType: Strong prior (-150,000 AUD for units)
+
+  # Prior for the variance (Inverse Gamma)
+  Var ~ dgamma(0.01, 0.01)
+  tau <- 1 / Var
+
+  # Predictions for new data
+  for (i in 1:Npred) {
+    pred[i] <- beta0 + beta[1] * xPred[i, 1] + beta[2] * xPred[i, 2] + beta[3] * xPred[i, 3] + beta[4] * xPred[i, 4] + beta[5] * xPred[i, 5]
+  }
+}
+

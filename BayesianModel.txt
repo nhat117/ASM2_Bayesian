@@ -1,0 +1,37 @@
+
+  data {
+    ysd <- sd(SalePrice)
+    for (i in 1:Ntotal) {
+      zy[i] <- SalePrice[i] / ysd
+    }
+
+    for (j in 1:Nx) {
+      xsd[j] <- sd(x[, j])
+      for (i in 1:Ntotal) {
+        zx[i, j] <- x[i, j] / xsd[j]
+      }
+    }
+  }
+
+  model {
+    for (i in 1:Ntotal) {
+      zy[i] ~ dnorm(mu[i], tau)
+      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
+    }
+
+    zbeta0 ~ dnorm(0, 1/10^2)
+    zbeta[1] ~ dnorm(90/xsd[1], 1/10^2)
+    zbeta[2] ~ dnorm(100000/xsd[2], 1/50000^2)
+    zbeta[3] ~ dnorm(0, 1/10^6)
+    zbeta[4] ~ dnorm(120000/xsd[4], 1/10000^2)
+    zbeta[5] ~ dnorm(-150000/xsd[5], 1/5000^2)
+
+    zVar ~ dgamma(0.01, 0.01)
+    tau <- 1 / zVar
+
+    beta0 <- zbeta0 * ysd
+    for (j in 1:Nx) {
+      beta[j] <- (zbeta[j] * ysd) / xsd[j]
+    }
+  }
+

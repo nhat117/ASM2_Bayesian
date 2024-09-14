@@ -1,0 +1,46 @@
+
+  model {
+    # Data standardization
+    ysd <- sd(y)
+    for (i in 1:N) {
+      zy[i] <- y[i] / ysd
+    }
+    xsd1 <- sd(x1)
+    xsd2 <- sd(x2)
+    xsd3 <- sd(x3)
+    xsd4 <- sd(x4)
+    # Note: x5 is not standardized since it's binary
+
+    for (i in 1:N) {
+      zx1[i] <- x1[i] / xsd1
+      zx2[i] <- x2[i] / xsd2
+      zx3[i] <- x3[i] / xsd3
+      zx4[i] <- x4[i] / xsd4
+      zx5[i] <- x5[i]  # PropertyType (binary, not standardized)
+
+      # Likelihood for standardized data
+      zy[i] ~ dnorm(mu[i], tau)
+      mu[i] <- zbeta0 + zbeta1 * zx1[i] + zbeta2 * zx2[i] + zbeta3 * zx3[i] + zbeta4 * zx4[i] + zbeta5 * zx5[i]
+    }
+
+    # Priors for regression coefficients on standardized scale
+    zbeta0 ~ dnorm(0, 1.0E-6)  # Intercept
+    zbeta1 ~ dnorm(90 / xsd1, 1.0E-2)  # Area (scaled)
+    zbeta2 ~ dnorm(100000 / xsd2, 1.0E-6)  # Bedrooms (scaled)
+    zbeta3 ~ dnorm(0, 1.0E-6)  # Bathrooms (scaled)
+    zbeta4 ~ dnorm(120000 / xsd4, 1.0E-2)  # Car Parks (scaled)
+    zbeta5 ~ dnorm(-150000, 1.0E-2)  # PropertyType (not scaled, binary)
+
+    # Prior for the precision (1/variance)
+    tau <- 1 / sigma2
+    sigma2 ~ dgamma(0.01, 0.01)
+
+    # Transform coefficients back to original scale
+    beta0 <- zbeta0 * ysd
+    beta1 <- zbeta1 * xsd1 * ysd
+    beta2 <- zbeta2 * xsd2 * ysd
+    beta3 <- zbeta3 * xsd3 * ysd
+    beta4 <- zbeta4 * xsd4 * ysd
+    beta5 <- zbeta5 * ysd
+  }
+

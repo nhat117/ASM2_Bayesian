@@ -4,7 +4,7 @@ library(ggplot2)
 library(ggpubr)
 library(ks)
 library(rjags)
-library(runjags)
+c
 setwd("~/Documents/MATH2269_Bayesian/2024/presentations/Module 6/Application2")
 source("DBDA2E-utilities.R")      
 

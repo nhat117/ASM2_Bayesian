@@ -1,182 +1,261 @@
-# Install necessary libraries if not already installed
-# install.packages("rjags")
-# install.packages("coda")
-# install.packages("psych")  # For descriptive statistics
-# install.packages("ggplot2")  # For plotting histograms
-
-# Close all open graphics windows
-graphics.off()
-
 # Load necessary libraries
+graphics.off()  # Close all open graphics windows
+rm(list=ls())   # Clear all objects from memory
+library(ggplot2)
 library(rjags)
+library(runjags)
 library(coda)
-library(psych)  # For descriptive statistics
-library(ggplot2)  # For plotting histograms
-source('./DBDA2E-utilities.R')
+library(ggpubr)
+source("DBDA2E-utilities.R")
 
-# Load your dataset (you can modify the path as needed)
-file_path <- './Assignment2PropertyPrices.csv'
-data <- read.csv(file_path)
 
-# Randomly sample 500 rows from the dataset
-set.seed(123)  # Set seed for reproducibility
-data <- data[sample(nrow(data), 1000), ]
-
-# Rename columns for easier reference
-colnames(data) <- c('SalePrice', 'Area', 'Bedrooms', 'Bathrooms', 'CarParks', 'PropertyType')
-
-# Convert SalePrice from 100K units to full AUD
-data$SalePrice <- data$SalePrice * 100000
-
-# Descriptive statistics
-print(describe(data))  # Displays descriptive statistics of the dataset
-
-#===============================================================================
-# Plot histograms for each column
-plot_histograms <- function(data) {
-  # Loop through each column and plot histogram
-  for (col_name in colnames(data)) {
-    # Check if the column is numeric
-    if (is.numeric(data[[col_name]])) {
-      # Create histogram using ggplot2
-      p <- ggplot(data, aes_string(x = col_name)) + 
-        geom_histogram(binwidth = 30, fill = 'skyblue', color = 'black') +
-        labs(title = paste("Histogram of", col_name), x = col_name, y = "Frequency") +
-        theme_minimal()
-      print(p)  # Display the histogram
+# Define the smryMCMC_HD function
+smryMCMC_HD = function(codaSamples, compVal = NULL, saveName=NULL) {
+  summaryInfo = NULL
+  mcmcMat = as.matrix(codaSamples,chains=TRUE)
+  paramName = colnames(mcmcMat)
+  for (pName in paramName) {
+    if (pName %in% colnames(compVal)){
+      if (!is.na(compVal[pName])) {
+        summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName], compVal = as.numeric(compVal[pName])))
+      } else {
+        summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName]))
+      }
+    } else {
+      summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName]))
     }
   }
-}
-
-# Plot histograms of all numeric columns
-plot_histograms(data)
-
-#===============================================================================
-# Function to generate MCMC samples using JAGS
-genMCMC <- function(data, numSavedSteps = 1500, adaptSteps = 1500, burnInSteps = 5000, thinSteps = 11, nChains = 2, saveName = NULL) {
-  require(rjags)
-  
-  # Prepare the data for the JAGS model
-  jags_data <- list(
-    N = nrow(data),  
-    y = data$SalePrice,  
-    Area = data$Area,  
-    Bedrooms = data$Bedrooms,  
-    Bathrooms = data$Bathrooms,  
-    CarParks = data$CarParks,  
-    PropertyType = data$PropertyType  # PropertyType is binary (0 or 1)
-  )
-  
-  # Define the JAGS model as a string
-  jags_model_code <- "
-  model {
-    for (i in 1:N) {
-      # SalePrice and Area follow Gamma distribution
-      y[i] ~ dgamma(shape_y, rate_y)
-      Area[i] ~ dgamma(shape_area, rate_area)
-
-      # Linear model for the mean of SalePrice
-      mu[i] <- beta0 + beta1 * Area[i] + beta2 * Bedrooms[i] + beta3 * Bathrooms[i] +
-               beta4 * CarParks[i] + beta5 * PropEffect[i]
-      
-      # PropertyType is a Bernoulli variable (categorical with 0 and 1)
-      PropEffect[i] <- beta5 * PropertyType[i]
-    }
-
-    # Priors for regression coefficients
-    beta0 ~ dnorm(0, 1.0E-6)
-    beta1 ~ dnorm(90, 0.01)
-    beta2 ~ dnorm(100000, 1.0E-4)
-    beta3 ~ dnorm(0, 1.0E-6)
-    beta4 ~ dnorm(120000, 0.01)
-    beta5 ~ dnorm(-150000, 0.001)  # PropertyType effect modeled with normal distribution
-
-    # Gamma prior for SalePrice parameters (shape and rate)
-    shape_y ~ dgamma(1, 1)
-    rate_y ~ dgamma(1, 1)
-    
-    # Gamma prior for Area parameters (shape and rate)
-    shape_area ~ dgamma(1, 1)
-    rate_area ~ dgamma(1, 1)
-  }
-  "
-  
-  # Write the model to a file
-  writeLines(jags_model_code, con = "model.bug")
-  
-  # Compile the JAGS model
-  model <- jags.model("model.bug", data = jags_data, n.chains = nChains, n.adapt = adaptSteps)
-  
-  # Burn-in phase
-  cat("Burning in the MCMC chain...\n")
-  update(model, n.iter = burnInSteps)
-  
-  # Sample MCMC
-  cat("Sampling final MCMC chain...\n")
-  codaSamples <- coda.samples(model, variable.names = c("beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "sigma2"),
-                              n.iter = numSavedSteps * thinSteps / nChains, thin = thinSteps)
-  
+  rownames(summaryInfo) = paramName
   if (!is.null(saveName)) {
-    save(codaSamples, file = paste0(saveName, "_Mcmc.Rdata"))
+    write.csv(summaryInfo, file=paste0(saveName, "SummaryInfo.csv"))
   }
-  
-  return(codaSamples)
-}
-
-#===============================================================================
-# Function to summarize MCMC samples
-smryMCMC <- function(codaSamples, saveName = NULL) {
-  summaryInfo <- summary(codaSamples)
-  
-  if (!is.null(saveName)) {
-    write.csv(summaryInfo$statistics, file = paste0(saveName, "_Summary.csv"))
-  }
-  
   return(summaryInfo)
 }
 
-#===============================================================================
-# Function to plot MCMC diagnostics for each parameter
-plotMCMC <- function(codaSamples, data, saveName = NULL) {
-  mcmcMat <- as.matrix(codaSamples, chains = TRUE)
-  parNames <- colnames(mcmcMat)
+# Define the plotMCMC_HD function
+plotMCMC_HD = function(codaSamples, data, xName="x", yName="y", showCurve=FALSE, pairsPlot=FALSE, compVal = NULL, saveName=NULL, saveType="jpg") {
+  y = data[, yName]
+  x = as.matrix(data[, xName])
+  mcmcMat = as.matrix(codaSamples, chains=TRUE)
+  chainLength = NROW(mcmcMat)
+  beta0 = mcmcMat[,"beta0"]
+  beta = mcmcMat[,grep("^beta$|^beta\\[", colnames(mcmcMat))]
+  if (ncol(x) == 1) { beta = matrix(beta, ncol=1) }
+  tau = mcmcMat[,"tau"]
   
-  # Create diagnostic plots for each parameter
-  for (parName in parNames) {
-    diagMCMC(codaSamples, parName = parName)
+  # Plot the parameters
+  panelCount = 1
+  decideOpenGraph = function(panelCount, saveName, finished=FALSE, nRow=2, nCol=3) {
+    if (finished == TRUE) {
+      if (!is.null(saveName)) {
+        saveGraph(file=paste0(saveName, ceiling((panelCount-1)/(nRow*nCol))), type=saveType)
+      }
+      panelCount = 1
+      return(panelCount)
+    } else {
+      if ((panelCount %% (nRow*nCol)) == 1) {
+        if (panelCount > 1 & !is.null(saveName)) {
+          saveGraph(file=paste0(saveName, (panelCount %/% (nRow * nCol))), type=saveType)
+        }
+        openGraph(width=nCol*7.0/3, height=nRow*2.0)
+        layout(matrix(1:(nRow*nCol), nrow=nRow, byrow=TRUE))
+        par(mar=c(4,4,2.5,0.5), mgp=c(2.5,0.7,0))
+      }
+      panelCount = panelCount + 1
+      return(panelCount)
+    }
   }
   
-  if (!is.null(saveName)) {
-    saveGraph(file = paste0(saveName, "_Diagnostics"), type = "jpg")
+  # Plot for beta0
+  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
+  histInfo = plotPost(beta0, cex.lab = 1.75, showCurve=showCurve, xlab="beta[0]", main="Intercept")
+  
+  # Plot for each beta
+  for (bIdx in 1:ncol(beta)) {
+    panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
+    histInfo = plotPost(beta[,bIdx], cex.lab = 1.75, showCurve=showCurve, xlab=paste0("beta[", bIdx, "]"), main=xName[bIdx])
   }
+  
+  # Plot for tau
+  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
+  histInfo = plotPost(tau, cex.lab = 1.75, showCurve=showCurve, xlab="tau", main="Scale")
+  
+  panelCount = decideOpenGraph(panelCount, finished=TRUE, saveName=paste0(saveName, "PostMarg"))
 }
 
-#===============================================================================
-# Generate MCMC samples
-codaSamples <- genMCMC(data, numSavedSteps = 2000, adaptSteps = 2000, burnInSteps = 5000, thinSteps = 11, nChains = 2)
+# Load the dataset
+data <- read.csv("Assignment2PropertyPrices.csv")
 
-# Summarize MCMC samples
-summaryInfo <- smryMCMC(codaSamples)
+# Prepare standardized data for JAGS
+x <- as.matrix(data[, c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType")])
+y <- data$SalePrice
 
-show(summaryInfo)
+dataList <- list(
+  SalePrice = y,
+  x = x,
+  Nx = ncol(x),
+  Ntotal = nrow(data)
+)
 
-# Diagnostic plots for beta0
-diagMCMC(codaSamples, parName="beta0")
+# THE MODEL WITH STANDARDIZATION
+modelString = "
+  data {
+    ysd <- sd(SalePrice)
+    for (i in 1:Ntotal) {
+      zy[i] <- SalePrice[i] / ysd
+    }
 
-# Diagnostic plots for beta1
-diagMCMC(codaSamples, parName="beta1")
+    for (j in 1:Nx) {
+      xsd[j] <- sd(x[, j])
+      for (i in 1:Ntotal) {
+        zx[i, j] <- x[i, j] / xsd[j]
+      }
+    }
+  }
 
-# Diagnostic plots for beta2
-diagMCMC(codaSamples, parName="beta2")
+  model {
+    for (i in 1:Ntotal) {
+      zy[i] ~ dnorm(mu[i], tau)
+      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
+    }
 
-# Diagnostic plots for beta3
-diagMCMC(codaSamples, parName="beta3")
+    zbeta0 ~ dnorm(0, 1/10^2)
+    zbeta[1] ~ dnorm(90/xsd[1], 1/10^2)
+    zbeta[2] ~ dnorm(100000/xsd[2], 1/50000^2)
+    zbeta[3] ~ dnorm(0, 1/10^6)
+    zbeta[4] ~ dnorm(120000/xsd[4], 1/10000^2)
+    zbeta[5] ~ dnorm(-150000/xsd[5], 1/5000^2)
 
-# Diagnostic plots for beta4
-diagMCMC(codaSamples, parName="beta4")
+    zVar ~ dgamma(0.01, 0.01)
+    tau <- 1 / zVar
 
-# Diagnostic plots for beta5
-diagMCMC(codaSamples, parName="beta5")
+    beta0 <- zbeta0 * ysd
+    for (j in 1:Nx) {
+      beta[j] <- (zbeta[j] * ysd) / xsd[j]
+    }
+  }
+"
 
-# Diagnostic plots for sigma2
-#diagMCMC(codaSamples, parName="sigma2")
+# Write out the model to a text file
+writeLines(modelString, con="BayesianModel.txt")
+# Track start time
+start_time <- Sys.time()
+
+# Define the model string (your Bayesian model definition)
+writeLines(modelString, con="TEMPmodel.txt")
+
+# MCMC Parameters
+adaptSteps <- 500       # Number of steps to "tune" the samplers
+burnInSteps <- 1000     # Burn-in steps
+nChains <- 2            # Number of chains
+thinSteps <- 3          # Thinning interval
+numSavedSteps <- 10000  # Number of saved steps
+nIter <- ceiling((numSavedSteps * thinSteps) / nChains)  # Total iterations
+
+# Define initial values for the chains (optional)
+initsList <- list(
+  list(zbeta0 = 0, zbeta = rep(0, 5), zVar = 1),
+  list(zbeta0 = 1, zbeta = rep(1, 5), zVar = 2)
+)
+
+# Data for the model (assuming dataList has been defined earlier)
+dataList <- list(
+  SalePrice = y,
+  x = x,
+  Nx = ncol(x),
+  Ntotal = nrow(data)
+)
+
+# Run the model using run.jags
+runJagsOut <- run.jags(method = "parallel",   # Use parallel processing
+                       model = "TEMPmodel.txt",  # JAGS model file
+                       monitor = c("zbeta0", "zbeta", "beta0", "beta", "tau", "zVar"),  # Parameters to monitor
+                       data = dataList,         # Data for the model
+                       inits = initsList,       # Initial values
+                       n.chains = nChains,      # Number of chains
+                       adapt = adaptSteps,      # Adaptation steps
+                       burnin = burnInSteps,    # Burn-in steps
+                       sample = numSavedSteps,  # Number of saved samples
+                       thin = thinSteps,        # Thinning interval
+                       summarise = FALSE,       # Disable automatic summary
+                       plots = FALSE)           # Disable automatic plotting
+
+# Convert to coda object for further analysis
+codaSamples <- as.mcmc.list(runJagsOut)
+
+# Display summary statistics of the sampled parameters
+summary(codaSamples)
+
+# Further thinning from the codaSamples
+furtherThin <- 7  # Additional thinning interval
+thinningSequence <- seq(1, nrow(codaSamples[[1]]), furtherThin)
+
+# Apply further thinning
+newCodaSamples <- mcmc.list()
+for (i in 1:nChains) {
+  newCodaSamples[[i]] <- as.mcmc(codaSamples[[i]][thinningSequence, ])
+}
+
+# Display summary statistics after further thinning
+summary(newCodaSamples)
+
+# Diagnostics for MCMC chains
+param_names <- c("beta0", "beta[1]", "beta[2]", "beta[3]", "beta[4]", "tau")
+for (param in param_names) {
+  diagMCMC(newCodaSamples, parName = param)
+}
+
+# Save the workspace for future use
+save.image(file = "MCMCSamplingResults.RData")
+
+# Track end time
+end_time <- Sys.time()
+
+
+# Print start and end times
+print(paste("MCMC sampling started at:", start_time))
+print(paste("MCMC sampling ended at:", end_time))
+
+# Calculate and print total duration
+duration <- end_time - start_time
+print(paste("Total duration of MCMC sampling:", duration))
+
+# Summarize the MCMC Results
+summaryInfo <- smryMCMC_HD(codaSamples = newCodaSamples)
+print(summaryInfo)
+
+# List of parameter names
+param_names <- c("beta0", "beta[1]", "beta[2]", "beta[3]", "beta[4]", "beta[5]", "tau")
+
+# Loop through the parameter names and run diagMCMC for each
+for (param in param_names) {
+  diagMCMC(newCodaSamples, parName = param)
+}
+e
+# Plot MCMC results using the custom plot function
+plotMCMC_HD(codaSamples = newCodaSamples, 
+            data = data, 
+            xName = c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType"), 
+            yName = "SalePrice", 
+            saveName = "BayesianModel", saveType = "jpg")
+
+
+
+
+# Conduct a predictive check
+coefficients <- summaryInfo[7:11,3]  # Get the model coefficients from posterior
+Variance <- summaryInfo[12,3]        # Get the variance
+
+# Generate random data from the posterior distribution
+meanGamma <- as.matrix(cbind(rep(1, nrow(x)), x)) %*% as.vector(coefficients)
+randomData <- rgamma(n = nrow(x), shape = meanGamma^2 / Variance, rate = meanGamma / Variance)
+
+# Display the density plot of observed data and posterior predictive distribution
+predicted <- data.frame(SalePrice = randomData)
+observed <- data.frame(SalePrice = y)
+predicted$type <- "Predicted"
+observed$type <- "Observed"
+dataPred <- rbind(predicted, observed)
+
+# Plot observed vs predicted densities
+ggplot(dataPred, aes(SalePrice, fill = type)) + geom_density(alpha = 0.2)
