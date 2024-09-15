@@ -100,46 +100,7 @@ dataList <- list(
   Ntotal = nrow(data)
 )
 
-# THE MODEL WITH STANDARDIZATION
 modelString = "
-  data {
-    ysd <- sd(SalePrice)
-    for (i in 1:Ntotal) {
-      zy[i] <- SalePrice[i] / ysd
-    }
-
-    for (j in 1:Nx) {
-      xsd[j] <- sd(x[, j])
-      for (i in 1:Ntotal) {
-        zx[i, j] <- x[i, j] / xsd[j]
-      }
-    }
-  }
-
-  model {
-    for (i in 1:Ntotal) {
-      zy[i] ~ dnorm(mu[i], tau)
-      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
-    }
-
-    zbeta0 ~ dnorm(0, 1/10^2)
-    zbeta[1] ~ dnorm(90/xsd[1], 1/10^2)
-    zbeta[2] ~ dnorm(100000/xsd[2], 1/50000^2)
-    zbeta[3] ~ dnorm(0, 1/10^6)
-    zbeta[4] ~ dnorm(120000/xsd[4], 1/10000^2)
-    zbeta[5] ~ dnorm(-150000/xsd[5], 1/5000^2)
-
-    zVar ~ dgamma(0.01, 0.01)
-    tau <- 1 / zVar
-
-    beta0 <- zbeta0 * ysd
-    for (j in 1:Nx) {
-      beta[j] <- (zbeta[j] * ysd) / xsd[j]
-    }
-  }
-"
-
-model_string = modelString = "
   data {
     # Standardizing SalePrice
     ysd <- sd(SalePrice)
@@ -157,6 +118,26 @@ model_string = modelString = "
   }
 
   model {
+    # Define all necessary parameters directly in the model
+
+    # Area-specific parameters
+    shape_area <- 2.5
+    rate_area <- 1.5
+
+    # Bedrooms-specific parameters
+    n_bedrooms <- 5  # Fixed integer, you can adjust based on your data
+    p_bedrooms <- 0.7  # Probability between 0 and 1
+
+    # Bathrooms-specific parameters
+    n_bathrooms <- 4
+    p_bathrooms <- 0.5
+
+    # CarPark-specific parameters
+    lambda_carpark <- 1.2
+
+    # PropertyType-specific parameters
+    p_property <- 0.4
+
     # Likelihood for standardized data
     for (i in 1:Ntotal) {
       zy[i] ~ dnorm(mu[i], tau)
@@ -166,20 +147,29 @@ model_string = modelString = "
     # Priors for coefficients
     zbeta0 ~ dnorm(0, 1/10^2)  # Weak prior for intercept
 
-    # Area: Strong belief, centered at 90 AUD/m²
-    zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)  # Small variance for strong belief
+    # Area: Follows a Gamma distribution
+    for (i in 1:Ntotal) {
+      Area[i] ~ dgamma(shape_area, rate_area)
+    }
+    zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)
 
-    # Bedrooms: Weak belief, centered at 100,000 AUD/bedroom
-    zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)  # Larger variance for weak belief
+    # Bedrooms: Treated as data, not modeled using `dbinom` here
+    zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)
 
-    # Bathrooms: No expert knowledge
-    zbeta[3] ~ dnorm(0, 1 / 10^6)  # Non-informative prior
+    # Bathrooms: Treated as data, not modeled using `dbinom`
+    zbeta[3] ~ dnorm(0, 1 / 10^6)
 
-    # CarParks: Strong belief, centered at 120,000 AUD per car park
-    zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)  # Small variance for strong belief
+    # CarParks: Follows a Poisson distribution
+    for (i in 1:Ntotal) {
+      CarParks[i] ~ dpois(lambda_carpark)
+    }
+    zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)
 
-    # PropertyType: Strong belief, 150,000 AUD less for units
-    zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 5000^2)  # Small variance for strong belief
+    # PropertyType: Follows a Bernoulli distribution
+    for (i in 1:Ntotal) {
+      PropertyType[i] ~ dbern(p_property)
+    }
+    zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 5000^2)
 
     # Residual variance (inverse gamma)
     zVar ~ dgamma(0.01, 0.01)
@@ -242,7 +232,8 @@ dataList <- list(
 )
 
 # Run the model using run.jags
-runJagsOut <- run.jags(method = "parallel",   # Use parallel processing
+runJagsOut <- run.jags(
+  #method = "parallel",   # Use parallel processing
                        model = "TEMPmodel.txt",  # JAGS model file
                        monitor = c("zbeta0", "zbeta", "beta0", "beta", "tau", "zVar"),  # Parameters to monitor
                        data = dataList,         # Data for the model
@@ -306,24 +297,3 @@ plotMCMC_HD(codaSamples = newCodaSamples,
             xName = c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType"), 
             yName = "SalePrice", 
             saveName = "BayesianModel", saveType = "jpg")
-
-
-
-
-# Conduct a predictive check
-coefficients <- summaryInfo[7:11,3]  # Get the model coefficients from posterior
-Variance <- summaryInfo[12,3]        # Get the variance
-
-# Generate random data from the posterior distribution
-meanGamma <- as.matrix(cbind(rep(1, nrow(x)), x)) %*% as.vector(coefficients)
-randomData <- rgamma(n = nrow(x), shape = meanGamma^2 / Variance, rate = meanGamma / Variance)
-
-# Display the density plot of observed data and posterior predictive distribution
-predicted <- data.frame(SalePrice = randomData)
-observed <- data.frame(SalePrice = y)
-predicted$type <- "Predicted"
-observed$type <- "Observed"
-dataPred <- rbind(predicted, observed)
-
-# Plot observed vs predicted densities
-ggplot(dataPred, aes(SalePrice, fill = type)) + geom_density(alpha = 0.2)
