@@ -103,10 +103,10 @@ model_string <- "
     mu[5] <- -150000   # PropertyType
     
     # Prior variances to reflect the expert information
-    Var[1] <- 10^2     # Area
-    Var[2] <- 10^5     # Bedrooms
-    Var[3] <- 10^7     # Bathrooms
-    Var[4] <- 999      # CarParks
+    Var[1] <- 10     # Area
+    Var[2] <- 10^6     # Bedrooms
+    Var[3] <- 10^6     # Bathrooms
+    Var[4] <- 10^2      # CarParks
     Var[5] <- 10       # PropertyType
     
     # Compute corresponding prior means and variances for the standardized parameters
@@ -120,7 +120,7 @@ model_string <- "
     }
 
     # Priors on standardized scale
-    zbeta0 ~ dnorm(0, 1/10^6)  
+    zbeta0 ~ dnorm(0, 1/100000)  
 
     for (j in 1:Nx) {
       zbeta[j] ~ dnorm(muZ[j], 1/Var[j])
@@ -148,10 +148,10 @@ parameters <- c("beta0" ,  "beta" , "sigma", "zbeta0" ,"zbeta", "zsigma", "nu","
 
 # MCMC settings
 adaptSteps = 500       # Number of adaptation steps
-burnInSteps = 1000     # Number of burn-in steps
-nChains = 2            # Number of chains
-thinSteps = 4          # Thinning parameter
-numSavedSteps = 10000  # Number of saved MCMC steps
+burnInSteps = 5000     # Number of burn-in steps
+nChains = 4            # Number of chains
+thinSteps = 2          # Thinning parameter
+numSavedSteps = 20000  # Number of saved MCMC steps
 nIter = ceiling((numSavedSteps * thinSteps) / nChains)  # Total number of iterations per chain run
 
 # Measure the runtime of the MCMC process using system.time()

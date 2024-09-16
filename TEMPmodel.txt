@@ -26,10 +26,10 @@
     mu[5] <- -150000   # PropertyType
     
     # Prior variances to reflect the expert information
-    Var[1] <- 10^2     # Area
-    Var[2] <- 10^5     # Bedrooms
-    Var[3] <- 10^7     # Bathrooms
-    Var[4] <- 999      # CarParks
+    Var[1] <- 10     # Area
+    Var[2] <- 10^6     # Bedrooms
+    Var[3] <- 10^6     # Bathrooms
+    Var[4] <- 10^2      # CarParks
     Var[5] <- 10       # PropertyType
     
     # Compute corresponding prior means and variances for the standardized parameters
@@ -43,7 +43,7 @@
     }
 
     # Priors on standardized scale
-    zbeta0 ~ dnorm(0, 1/10^6)  
+    zbeta0 ~ dnorm(0, 1/100000)  
 
     for (j in 1:Nx) {
       zbeta[j] ~ dnorm(muZ[j], 1/Var[j])
