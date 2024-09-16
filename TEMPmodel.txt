@@ -1,40 +1,65 @@
 
-data {
-  ysd <- sd(y)
-  for (i in 1:Ntotal) {
-    zy[i] <- y[i] / ysd
-  }
-  for (j in 1:Nx) {
-    xsd[j] <- sd(x[,j])
+  # Standardize the data:
+  data {
+    # Define Mean and Variance of y
+    ym <- mean(y)
+    ysd <- sd(y)
+    
+    # Standardize Y
     for (i in 1:Ntotal) {
-      zx[i,j] <- x[i,j] / xsd[j]
+      zy[i] <- (y[i] - ym) / ysd
+    }
+
+    for (j in 1:Nx) {
+      xm[j] <- mean(x[,j])
+      xsd[j] <- sd(x[,j])
+      for (i in 1:Ntotal) {
+        zx[i,j] <- (x[i,j] - xm[j]) / xsd[j]
+      }
+    }
+
+    # Prior locations to reflect the expert information
+    mu[1] <- 90        # Area
+    mu[2] <- 100000    # Bedrooms
+    mu[3] <- 100000    # Bathrooms
+    mu[4] <- 120000    # CarParks
+    mu[5] <- -150000   # PropertyType
+    
+    # Prior variances to reflect the expert information
+    Var[1] <- 10^2     # Area
+    Var[2] <- 10^5     # Bedrooms
+    Var[3] <- 10^7     # Bathrooms
+    Var[4] <- 999      # CarParks
+    Var[5] <- 10       # PropertyType
+    
+    # Compute corresponding prior means and variances for the standardized parameters
+    muZ[1:Nx] <- mu[1:Nx] * xsd[1:Nx] / ysd
+  }
+
+  # Model block for standardized data
+  model {
+    for (i in 1:Ntotal) {
+      zy[i] ~ dt(zbeta0 + sum(zbeta[1:Nx] * zx[i,1:Nx]), 1/zsigma^2, nu)
+    }
+
+    # Priors on standardized scale
+    zbeta0 ~ dnorm(0, 1/10^6)  
+
+    for (j in 1:Nx) {
+      zbeta[j] ~ dnorm(muZ[j], 1/Var[j])
+    }
+
+    zsigma ~ dunif(1.0E-5, 1.0E+5)
+    nu ~ dexp(1/30.0)
+
+    # Transform to original scale
+    beta[1:Nx] <- (zbeta[1:Nx] / xsd[1:Nx]) * ysd
+    beta0 <- zbeta0 * ysd + ym - sum(zbeta[1:Nx] * xm[1:Nx] / xsd[1:Nx]) * ysd
+    sigma <- zsigma * ysd
+    
+    # Compute predictions at every step of the MCMC
+    for ( i in 1:Npred){
+      pred[i] <- beta0 + beta[1] * xPred[i,1] + beta[2] * xPred[i,2] + beta[3] * xPred[i,3] + beta[4] * xPred[i,4] + beta[5] * xPred[i,5]
     }
   }
-}
-model {
-  for (i in 1:Ntotal) {
-    zy[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
-    mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i,1:Nx])
-  }
-  
-  # Priors for intercept and predictors, scaled to 100k AUD units
-  zbeta0 ~ dnorm(0, 1/2^2)
-  zbeta[1] ~ dnorm(0.9 / xsd[1], 1/(4/xsd[1]^2))  # Area: 90,000 AUD -> 0.9 in 100k units
-  zbeta[2] ~ dnorm(1 / xsd[2], 1/(4/xsd[2]^2))    # Bedrooms: 100,000 AUD -> 1 in 100k units
-  zbeta[3] ~ dnorm(0, 1/4)                        # Bathrooms: no expert knowledge
-  zbeta[4] ~ dnorm(1.2 / xsd[4], 1/(4/xsd[4]^2))  # CarParks: 120,000 AUD -> 1.2 in 100k units
-  zbeta[5] ~ dnorm(-1.5 / xsd[5], 1/(4/xsd[5]^2)) # PropertyType: -150,000 AUD -> -1.5 in 100k units
-  
-  zVar ~ dgamma(0.01, 0.01)
-  
-  # Back-transform to the original scale
-  beta[1:Nx] <- (zbeta[1:Nx] / xsd[1:Nx]) * ysd
-  beta0 <- zbeta0 * ysd
-  tau <- zVar * (ysd)^2
-  
-  # Predictions for new properties
-  for (i in 1:5) {  # 5 new properties based on the table you provided
-    pred[i] <- beta0 + beta[1] * xPred[i,1] + beta[2] * xPred[i,2] + beta[3] * xPred[i,3] + beta[4] * xPred[i,4] + beta[5] * xPred[i,5]
-  }
-}
 
