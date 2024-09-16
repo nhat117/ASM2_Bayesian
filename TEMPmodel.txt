@@ -1,82 +1,40 @@
 
-  data {
-    # Standardizing SalePrice
-    ysd <- sd(SalePrice)
+data {
+  ysd <- sd(y)
+  for (i in 1:Ntotal) {
+    zy[i] <- y[i] / ysd
+  }
+  for (j in 1:Nx) {
+    xsd[j] <- sd(x[,j])
     for (i in 1:Ntotal) {
-      zy[i] <- SalePrice[i] / ysd
-    }
-
-    # Standardizing predictors (Area, Bedrooms, etc.)
-    for (j in 1:Nx) {
-      xsd[j] <- sd(x[, j])
-      for (i in 1:Ntotal) {
-        zx[i, j] <- x[i, j] / xsd[j]
-      }
+      zx[i,j] <- x[i,j] / xsd[j]
     }
   }
-
-  model {
-    # Define all necessary parameters directly in the model
-
-    # Area-specific parameters
-    shape_area <- 2.5
-    rate_area <- 1.5
-
-    # Bedrooms-specific parameters
-    n_bedrooms <- 5  # Fixed integer, you can adjust based on your data
-    p_bedrooms <- 0.7  # Probability between 0 and 1
-
-    # Bathrooms-specific parameters
-    n_bathrooms <- 4
-    p_bathrooms <- 0.5
-
-    # CarPark-specific parameters
-    lambda_carpark <- 1.2
-
-    # PropertyType-specific parameters
-    p_property <- 0.4
-
-    # Likelihood for standardized data
-    for (i in 1:Ntotal) {
-      zy[i] ~ dnorm(mu[i], tau)
-      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
-    }
-
-    # Priors for coefficients
-    zbeta0 ~ dnorm(0, 1/10^2)  # Weak prior for intercept
-
-    # Area: Follows a Gamma distribution
-    for (i in 1:Ntotal) {
-      Area[i] ~ dgamma(shape_area, rate_area)
-    }
-    zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)
-
-    # Bedrooms: Treated as data, not modeled using `dbinom` here
-    zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)
-
-    # Bathrooms: Treated as data, not modeled using `dbinom`
-    zbeta[3] ~ dnorm(0, 1 / 10^6)
-
-    # CarParks: Follows a Poisson distribution
-    for (i in 1:Ntotal) {
-      CarParks[i] ~ dpois(lambda_carpark)
-    }
-    zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)
-
-    # PropertyType: Follows a Bernoulli distribution
-    for (i in 1:Ntotal) {
-      PropertyType[i] ~ dbern(p_property)
-    }
-    zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 5000^2)
-
-    # Residual variance (inverse gamma)
-    zVar ~ dgamma(0.01, 0.01)
-    tau <- 1 / zVar
-
-    # Transforming back to original scale
-    beta0 <- zbeta0 * ysd
-    for (j in 1:Nx) {
-      beta[j] <- (zbeta[j] * ysd) / xsd[j]
-    }
+}
+model {
+  for (i in 1:Ntotal) {
+    zy[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
+    mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i,1:Nx])
   }
+  
+  # Priors for intercept and predictors, scaled to 100k AUD units
+  zbeta0 ~ dnorm(0, 1/2^2)
+  zbeta[1] ~ dnorm(0.9 / xsd[1], 1/(4/xsd[1]^2))  # Area: 90,000 AUD -> 0.9 in 100k units
+  zbeta[2] ~ dnorm(1 / xsd[2], 1/(4/xsd[2]^2))    # Bedrooms: 100,000 AUD -> 1 in 100k units
+  zbeta[3] ~ dnorm(0, 1/4)                        # Bathrooms: no expert knowledge
+  zbeta[4] ~ dnorm(1.2 / xsd[4], 1/(4/xsd[4]^2))  # CarParks: 120,000 AUD -> 1.2 in 100k units
+  zbeta[5] ~ dnorm(-1.5 / xsd[5], 1/(4/xsd[5]^2)) # PropertyType: -150,000 AUD -> -1.5 in 100k units
+  
+  zVar ~ dgamma(0.01, 0.01)
+  
+  # Back-transform to the original scale
+  beta[1:Nx] <- (zbeta[1:Nx] / xsd[1:Nx]) * ysd
+  beta0 <- zbeta0 * ysd
+  tau <- zVar * (ysd)^2
+  
+  # Predictions for new properties
+  for (i in 1:5) {  # 5 new properties based on the table you provided
+    pred[i] <- beta0 + beta[1] * xPred[i,1] + beta[2] * xPred[i,2] + beta[3] * xPred[i,3] + beta[4] * xPred[i,4] + beta[5] * xPred[i,5]
+  }
+}
 

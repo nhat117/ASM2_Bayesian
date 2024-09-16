@@ -1,299 +1,273 @@
-# Load necessary libraries
-graphics.off()  # Close all open graphics windows
-rm(list=ls())   # Clear all objects from memory
+# Clear R's environment and close all graphics
+graphics.off() # This closes all of R's graphics windows.
+rm(list=ls())  # Careful! This clears all of R's memory!
+
+# Load required libraries
 library(ggplot2)
+library(ggpubr)
+library(ks)
 library(rjags)
 library(runjags)
-library(coda)
-library(ggpubr)
+# Load the necessary library
+library(dplyr)
+
+
+# Set the working directory#setwd("~/Documents/MATH2269_Bayesian/2024/presentations/Module 6/Application2")
 source("DBDA2E-utilities.R")
-
-
-# Define the smryMCMC_HD function
-smryMCMC_HD = function(codaSamples, compVal = NULL, saveName=NULL) {
+property_data <- read.csv("./Assignment2PropertyPrices.csv")
+set.seed(42)  # Setting a seed for reproducibility
+property_data <- sample_n(property_data, 1000)
+#===============PRELIMINARY FUNCTIONS FOR POSTERIOR INFERENCES====================
+smryMCMC_HD = function(  codaSamples , compVal = NULL,  saveName=NULL) {
   summaryInfo = NULL
   mcmcMat = as.matrix(codaSamples,chains=TRUE)
   paramName = colnames(mcmcMat)
-  for (pName in paramName) {
+  for ( pName in paramName ) {
     if (pName %in% colnames(compVal)){
       if (!is.na(compVal[pName])) {
-        summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName], compVal = as.numeric(compVal[pName])))
-      } else {
-        summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName]))
+        summaryInfo = rbind( summaryInfo , summarizePost( paramSampleVec = mcmcMat[,pName] , 
+                                                          compVal = as.numeric(compVal[pName]) ))
+      }
+      else {
+        summaryInfo = rbind( summaryInfo , summarizePost( paramSampleVec = mcmcMat[,pName] ) )
       }
     } else {
-      summaryInfo = rbind(summaryInfo, summarizePost(paramSampleVec = mcmcMat[,pName]))
+      summaryInfo = rbind( summaryInfo , summarizePost( paramSampleVec = mcmcMat[,pName] ) )
     }
   }
   rownames(summaryInfo) = paramName
-  if (!is.null(saveName)) {
-    write.csv(summaryInfo, file=paste0(saveName, "SummaryInfo.csv"))
+  if ( !is.null(saveName) ) {
+    write.csv( summaryInfo , file=paste(saveName,"SummaryInfo.csv",sep="") )
   }
-  return(summaryInfo)
+  return( summaryInfo )
 }
 
-# Define the plotMCMC_HD function
-plotMCMC_HD = function(codaSamples, data, xName="x", yName="y", showCurve=FALSE, pairsPlot=FALSE, compVal = NULL, saveName=NULL, saveType="jpg") {
-  y = data[, yName]
-  x = as.matrix(data[, xName])
-  mcmcMat = as.matrix(codaSamples, chains=TRUE)
-  chainLength = NROW(mcmcMat)
-  beta0 = mcmcMat[,"beta0"]
-  beta = mcmcMat[,grep("^beta$|^beta\\[", colnames(mcmcMat))]
-  if (ncol(x) == 1) { beta = matrix(beta, ncol=1) }
-  tau = mcmcMat[,"tau"]
-  
-  # Plot the parameters
-  panelCount = 1
-  decideOpenGraph = function(panelCount, saveName, finished=FALSE, nRow=2, nCol=3) {
-    if (finished == TRUE) {
-      if (!is.null(saveName)) {
-        saveGraph(file=paste0(saveName, ceiling((panelCount-1)/(nRow*nCol))), type=saveType)
-      }
-      panelCount = 1
-      return(panelCount)
-    } else {
-      if ((panelCount %% (nRow*nCol)) == 1) {
-        if (panelCount > 1 & !is.null(saveName)) {
-          saveGraph(file=paste0(saveName, (panelCount %/% (nRow * nCol))), type=saveType)
-        }
-        openGraph(width=nCol*7.0/3, height=nRow*2.0)
-        layout(matrix(1:(nRow*nCol), nrow=nRow, byrow=TRUE))
-        par(mar=c(4,4,2.5,0.5), mgp=c(2.5,0.7,0))
-      }
-      panelCount = panelCount + 1
-      return(panelCount)
-    }
-  }
-  
-  # Plot for beta0
-  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
-  histInfo = plotPost(beta0, cex.lab = 1.75, showCurve=showCurve, xlab="beta[0]", main="Intercept")
-  
-  # Plot for each beta
-  for (bIdx in 1:ncol(beta)) {
-    panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
-    histInfo = plotPost(beta[,bIdx], cex.lab = 1.75, showCurve=showCurve, xlab=paste0("beta[", bIdx, "]"), main=xName[bIdx])
-  }
-  
-  # Plot for tau
-  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName, "PostMarg"))
-  histInfo = plotPost(tau, cex.lab = 1.75, showCurve=showCurve, xlab="tau", main="Scale")
-  
-  panelCount = decideOpenGraph(panelCount, finished=TRUE, saveName=paste0(saveName, "PostMarg"))
-}
+#===============================================================================
+# Include new prediction data
 
-# Load the dataset
-# Load the CSV file
-data <- read.csv("Assignment2PropertyPrices.csv")
+# Define the new prediction data (from the image you provided):
+xPred <- array(NA, dim = c(5, 5))  # 5 properties with 5 predictors
 
-# Randomly select 500 rows
-#data <- data[sample(1:nrow(data), 500, replace = FALSE), ]
-# Prepare standardized data for JAGS
-x <- as.matrix(data[, c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType")])
-y <- data$SalePrice
+# Populate the data (Area, Bedrooms, Bathrooms, CarParks, PropertyType)
+xPred[1,] <- c(600, 2, 2, 1, 1)  # Property 1 (Unit)
+xPred[2,] <- c(800, 3, 1, 2, 0)  # Property 2 (House)
+xPred[3,] <- c(1500, 2, 1, 1, 0)  # Property 3 (House)
+xPred[4,] <- c(2500, 5, 4, 4, 0)  # Property 4 (House)
+xPred[5,] <- c(250, 3, 2, 1, 1)   # Property 5 (Unit)
 
+# Prepare the data for JAGS
 dataList <- list(
-  SalePrice = y,
-  x = x,
-  Nx = ncol(x),
-  Ntotal = nrow(data)
+  x = cbind(property_data$Area, property_data$Bedrooms, property_data$Bathrooms, property_data$CarParks, property_data$PropertyType),
+  y = property_data$SalePrice,  # SalePrice in 100k AUD
+  Nx = 5,  # Number of predictors
+  Ntotal = nrow(property_data),  # Number of observations
+  xPred = xPred  # Prediction data for the 5 new properties
 )
 
+# Initial values based on expert knowledge
+initsList <- list(
+  zbeta0 = 2000,  # Intercept
+  zbeta = c(0.9, 1, 0, 1.2, -1.5),  # Expert knowledge for Area, Bedrooms, Bathrooms, CarParks, PropertyType
+  Var = 12000000  # Variance
+)
+
+# JAGS model string with priors scaled for 100k AUD units
 modelString = "
-  data {
-    # Standardizing SalePrice
-    ysd <- sd(SalePrice)
+data {
+  ysd <- sd(y)
+  for (i in 1:Ntotal) {
+    zy[i] <- y[i] / ysd
+  }
+  for (j in 1:Nx) {
+    xsd[j] <- sd(x[,j])
     for (i in 1:Ntotal) {
-      zy[i] <- SalePrice[i] / ysd
-    }
-
-    # Standardizing predictors (Area, Bedrooms, etc.)
-    for (j in 1:Nx) {
-      xsd[j] <- sd(x[, j])
-      for (i in 1:Ntotal) {
-        zx[i, j] <- x[i, j] / xsd[j]
-      }
+      zx[i,j] <- x[i,j] / xsd[j]
     }
   }
-
-  model {
-    # Define all necessary parameters directly in the model
-
-    # Area-specific parameters
-    shape_area <- 2.5
-    rate_area <- 1.5
-
-    # Bedrooms-specific parameters
-    n_bedrooms <- 5  # Fixed integer, you can adjust based on your data
-    p_bedrooms <- 0.7  # Probability between 0 and 1
-
-    # Bathrooms-specific parameters
-    n_bathrooms <- 4
-    p_bathrooms <- 0.5
-
-    # CarPark-specific parameters
-    lambda_carpark <- 1.2
-
-    # PropertyType-specific parameters
-    p_property <- 0.4
-
-    # Likelihood for standardized data
-    for (i in 1:Ntotal) {
-      zy[i] ~ dnorm(mu[i], tau)
-      mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i, 1:Nx])
-    }
-
-    # Priors for coefficients
-    zbeta0 ~ dnorm(0, 1/10^2)  # Weak prior for intercept
-
-    # Area: Follows a Gamma distribution
-    for (i in 1:Ntotal) {
-      Area[i] ~ dgamma(shape_area, rate_area)
-    }
-    zbeta[1] ~ dnorm(90 / xsd[1], 1 / 10^2)
-
-    # Bedrooms: Treated as data, not modeled using `dbinom` here
-    zbeta[2] ~ dnorm(100000 / xsd[2], 1 / 50000^2)
-
-    # Bathrooms: Treated as data, not modeled using `dbinom`
-    zbeta[3] ~ dnorm(0, 1 / 10^6)
-
-    # CarParks: Follows a Poisson distribution
-    for (i in 1:Ntotal) {
-      CarParks[i] ~ dpois(lambda_carpark)
-    }
-    zbeta[4] ~ dnorm(120000 / xsd[4], 1 / 10000^2)
-
-    # PropertyType: Follows a Bernoulli distribution
-    for (i in 1:Ntotal) {
-      PropertyType[i] ~ dbern(p_property)
-    }
-    zbeta[5] ~ dnorm(-150000 / xsd[5], 1 / 5000^2)
-
-    # Residual variance (inverse gamma)
-    zVar ~ dgamma(0.01, 0.01)
-    tau <- 1 / zVar
-
-    # Transforming back to original scale
-    beta0 <- zbeta0 * ysd
-    for (j in 1:Nx) {
-      beta[j] <- (zbeta[j] * ysd) / xsd[j]
-    }
+}
+model {
+  for (i in 1:Ntotal) {
+    zy[i] ~ dgamma((mu[i]^2) / zVar, mu[i] / zVar)
+    mu[i] <- zbeta0 + sum(zbeta[1:Nx] * zx[i,1:Nx])
   }
+  
+  # Priors for intercept and predictors, scaled to 100k AUD units
+  zbeta0 ~ dnorm(0, 1/2^2)
+  zbeta[1] ~ dnorm(0.9 / xsd[1], 1/(4/xsd[1]^2))  # Area: 90,000 AUD -> 0.9 in 100k units
+  zbeta[2] ~ dnorm(1 / xsd[2], 1/(4/xsd[2]^2))    # Bedrooms: 100,000 AUD -> 1 in 100k units
+  zbeta[3] ~ dnorm(0, 1/4)                        # Bathrooms: no expert knowledge
+  zbeta[4] ~ dnorm(1.2 / xsd[4], 1/(4/xsd[4]^2))  # CarParks: 120,000 AUD -> 1.2 in 100k units
+  zbeta[5] ~ dnorm(-1.5 / xsd[5], 1/(4/xsd[5]^2)) # PropertyType: -150,000 AUD -> -1.5 in 100k units
+  
+  zVar ~ dgamma(0.01, 0.01)
+  
+  # Back-transform to the original scale
+  beta[1:Nx] <- (zbeta[1:Nx] / xsd[1:Nx]) * ysd
+  beta0 <- zbeta0 * ysd
+  tau <- zVar * (ysd)^2
+  
+  # Predictions for new properties
+  for (i in 1:5) {  # 5 new properties based on the table you provided
+    pred[i] <- beta0 + beta[1] * xPred[i,1] + beta[2] * xPred[i,2] + beta[3] * xPred[i,3] + beta[4] * xPred[i,4] + beta[5] * xPred[i,5]
+  }
+}
 "
 
-# Write out the model to a text file
-writeLines(modelString, con="BayesianModel.txt")
-# Track start time
-start_time <- Sys.time()
-
-# Define the model string (your Bayesian model definition)
+# Write the model to a file
 writeLines(modelString, con="TEMPmodel.txt")
 
-# MCMC Parameters
-#adaptSteps <- 500       # Number of steps to "tune" the samplers
-#burnInSteps <- 1000     # Burn-in steps
-#nChains <- 2            # Number of chains
-#thinSteps <- 3         # Thinning interval
-#numSavedSteps <- 10000 # Number of saved steps
+# Define the parameters to monitor
+parameters <- c("zbeta0", "zbeta", "beta0", "beta", "tau", "zVar", "pred")
 
-#adaptSteps <- 2000       # Number of steps to "tune" the samplers (lower for simpler models)
-#burnInSteps <- 5000      # Burn-in steps (check convergence diagnostics)
-#nChains <- 3             # Number of chains (increase to 3 for better diagnostics)
-#thinSteps <- 5           # Thinning interval (reduce if autocorrelation is low)
-#numSavedSteps <- 5000    # Number of saved steps (adjust based on required precision)
+# MCMC settings
+adaptSteps = 500       # Number of adaptation steps
+burnInSteps = 1000     # Number of burn-in steps
+nChains = 2            # Number of chains
+thinSteps = 3          # Thinning parameter
+numSavedSteps = 10000  # Number of saved MCMC steps
+nIter = ceiling((numSavedSteps * thinSteps) / nChains)  # Total number of iterations per chain
 
-#adaptSteps <- 5000        # Increase for more complex models
-#burnInSteps <- 5000       # Adjust based on diagnostics
-#nChains <- 4              # Increase chains for better convergence
-#thinSteps <- 1            # Adjust based on autocorrelation (lower for low autocorrelation)
-#numSavedSteps <- 10000    # Increase to get more precise estimates
+# Run JAGS using the run.jags function
+runJagsOut <- run.jags(method = "parallel",
+                       model = "TEMPmodel.txt",
+                       monitor = parameters,
+                       data = dataList,
+                       inits = initsList,
+                       n.chains = nChains,
+                       adapt = adaptSteps,
+                       burnin = burnInSteps,
+                       sample = numSavedSteps,
+                       thin = thinSteps,
+                       summarise = FALSE,
+                       plots = FALSE)
 
-adaptSteps <- 10000        # Increased adaptation for complex models
-burnInSteps <- 10000       # Increased burn-in to ensure convergence
-nChains <- 4               # Four chains should be sufficient, increase if needed
-thinSteps <- 1             # Keeping thinning at 1 based on low autocorrelation
-numSavedSteps <- 15000     # More saved steps for higher precision
-nIter <- ceiling((numSavedSteps * thinSteps) / nChains)  # Total iterations
+# Convert the output to coda samples for further analysis
+codaSamples = as.mcmc.list(runJagsOut)
 
-# Define initial values for the chains (optional)
-initsList <- list(
-  list(zbeta0 = 0, zbeta = rep(0, 5), zVar = 1),
-  list(zbeta0 = 1, zbeta = rep(1, 5), zVar = 2)
-)
-
-# Data for the model (assuming dataList has been defined earlier)
-dataList <- list(
-  SalePrice = y,
-  x = x,
-  Nx = ncol(x),
-  Ntotal = nrow(data)
-)
-
-# Run the model using run.jags
-runJagsOut <- run.jags(
-  #method = "parallel",   # Use parallel processing
-                       model = "TEMPmodel.txt",  # JAGS model file
-                       monitor = c("zbeta0", "zbeta", "beta0", "beta", "tau", "zVar"),  # Parameters to monitor
-                       data = dataList,         # Data for the model
-                       inits = initsList,       # Initial values
-                       n.chains = nChains,      # Number of chains
-                       adapt = adaptSteps,      # Adaptation steps
-                       burnin = burnInSteps,    # Burn-in steps
-                       sample = numSavedSteps,  # Number of saved samples
-                       thin = thinSteps,        # Thinning interval
-                       summarise = FALSE,       # Disable automatic summary
-                       plots = FALSE)           # Disable automatic plotting
-
-# Convert to coda object for further analysis
-codaSamples <- as.mcmc.list(runJagsOut)
-
-# Display summary statistics of the sampled parameters
+#================PREDICTIONS===================
+# Extract and summarize predictions for the new properties
 summary(codaSamples)
+predictions <- as.matrix(codaSamples)[,grep("pred", colnames(as.matrix(codaSamples)))]
 
-# Further thinning from the codaSamples
-furtherThin <- 7  # Additional thinning interval
-thinningSequence <- seq(1, nrow(codaSamples[[1]]), furtherThin)
+# Present the posterior means for the predicted sale prices
+apply(predictions, 2, mean)  # These are the predicted sale prices
 
-# Apply further thinning
-newCodaSamples <- mcmc.list()
-for (i in 1:nChains) {
-  newCodaSamples[[i]] <- as.mcmc(codaSamples[[i]][thinningSequence, ])
-}
+#=============== Plot MCMC HD =================
+plotMCMC_HD = function( codaSamples , data , xName="x" , yName="y" ,
+                        showCurve=FALSE ,  pairsPlot=FALSE , compVal = NULL,
+                        saveName=NULL , saveType="jpg" ) {
+  y = data[,yName]
+  x = as.matrix(data[,xName])
+  mcmcMat = as.matrix(codaSamples, chains=TRUE)
+  chainLength = NROW(mcmcMat)
+  
+  zbeta0 = mcmcMat[,"zbeta0"]
+  zbeta  = mcmcMat[,grep("^zbeta$|^zbeta\\[", colnames(mcmcMat))]
+  if (ncol(x)==1) { zbeta = matrix(zbeta, ncol=1) }
+  
+  zVar = mcmcMat[,"zVar"]
+  beta0 = mcmcMat[,"beta0"]
+  beta  = mcmcMat[,grep("^beta$|^beta\\[", colnames(mcmcMat))]
+  if (ncol(x)==1) { beta = matrix(beta, ncol=1) }
+  
+  tau = mcmcMat[,"tau"]
+  pred1 = mcmcMat[,"pred[1]"]
+  pred2 = mcmcMat[,"pred[2]"]
+  
+  #-----------------------------------------------------------------------------
+  # Marginal histograms:
+  
+  decideOpenGraph = function( panelCount , saveName , finished=FALSE , 
+                              nRow=2 , nCol=3 ) {
+    # If finishing a set:
+    if ( finished==TRUE ) {
+      if ( !is.null(saveName) ) {
+        saveGraph( file=paste0(saveName,ceiling((panelCount-1)/(nRow*nCol))), 
+                   type=saveType)
+      }
+      panelCount = 1 # re-set panelCount
+      return(panelCount)
+    } else {
+      # If this is first panel of a graph:
+      if ( ( panelCount %% (nRow*nCol) ) == 1 ) {
+        # If previous graph was open, save previous one:
+        if ( panelCount>1 & !is.null(saveName) ) {
+          saveGraph( file=paste0(saveName,(panelCount%/%(nRow*nCol))), 
+                     type=saveType)
+        }
+        # Open new graph
+        openGraph(width=nCol*7.0/3,height=nRow*2.0)
+        layout( matrix( 1:(nRow*nCol) , nrow=nRow, byrow=TRUE ) )
+        par( mar=c(4,4,2.5,0.5) , mgp=c(2.5,0.7,0) )
+      }
+      # Increment and return panel count:
+      panelCount = panelCount+1
+      return(panelCount)
+    }
+  }
+  # Plot marginal histograms:
+  panelCount = 1
+  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName,"PostMarg"))
+  histInfo = plotPost(beta0, cex.lab = 1.75, showCurve=showCurve, xlab=bquote(beta[0]), main="Intercept")
+  
+  for (bIdx in 1:ncol(beta)) {
+    panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName,"PostMarg"))
+    histInfo = plotPost(beta[,bIdx], cex.lab = 1.75, showCurve=showCurve, xlab=bquote(beta[.(bIdx)]), main=xName[bIdx])
+  }
+  
+  panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName,"PostMarg"))
+  histInfo = plotPost(tau, cex.lab = 1.75, showCurve=showCurve, xlab=bquote(tau), main="Scale")
+  
+  # Plot predictions:
+  for (i in 1:2) {
+    panelCount = decideOpenGraph(panelCount, saveName=paste0(saveName,"PostMarg"))
+    histInfo = plotPost(mcmcMat[,paste0("pred[", i, "]")], cex.lab = 1.75, showCurve=showCurve, xlab=paste("pred", i), main=paste("Prediction", i))
+  }
+  decideOpenGraph = function( panelCount , saveName , finished=FALSE , 
+                              nRow=2 , nCol=3 ) {
+    # If finishing a set:
+    if ( finished==TRUE ) {
+      if ( !is.null(saveName) ) {
+        saveGraph( file=paste0(saveName,ceiling((panelCount-1)/(nRow*nCol))), 
+                   type=saveType)
+      }
+      panelCount = 1 # re-set panelCount
+      return(panelCount)
+    } else {
+      # If this is first panel of a graph:
+      if ( ( panelCount %% (nRow*nCol) ) == 1 ) {
+        # If previous graph was open, save previous one:
+        if ( panelCount>1 & !is.null(saveName) ) {
+          saveGraph( file=paste0(saveName,(panelCount%/%(nRow*nCol))), 
+                     type=saveType)
+        }
+        # Open new graph
+        openGraph(width=nCol*7.0/3,height=nRow*2.0)
+        layout( matrix( 1:(nRow*nCol) , nrow=nRow, byrow=TRUE ) )
+        par( mar=c(4,4,2.5,0.5) , mgp=c(2.5,0.7,0) )
+      }
+      # Increment and return panel count:
+      panelCount = panelCount+1
+      return(panelCount)
+    }
+}}
 
-# Display summary statistics after further thinning
-summary(newCodaSamples)
 
-# Diagnostics for MCMC chains
-param_names <- c("beta0", "beta[1]", "beta[2]", "beta[3]", "beta[4]", "tau")
-for (param in param_names) {
-  diagMCMC(newCodaSamples, parName = param)
-}
+diagMCMC( codaSamples , parName="beta0" )
+diagMCMC( codaSamples , parName="beta[1]" )
+diagMCMC( codaSamples , parName="beta[2]" )
+diagMCMC( codaSamples , parName="beta[3]" )
+diagMCMC( codaSamples , parName="beta[4]" )
+diagMCMC( codaSamples , parName="tau" )
+diagMCMC( codaSamples , parName="pred[1]" )
+diagMCMC( codaSamples , parName="pred[2]" )
+diagMCMC( codaSamples , parName="zbeta0" )
+diagMCMC( codaSamples , parName="zbeta[1]" )
+diagMCMC( codaSamples , parName="zbeta[2]" )
+diagMCMC( codaSamples , parName="zbeta[3]" )
+diagMCMC( codaSamples , parName="zbeta[4]" )
 
-# Save the workspace for future use
-save.image(file = "MCMCSamplingResults.RData")
-
-# Track end time
-end_time <- Sys.time()
-
-
-# Print start and end times
-print(paste("MCMC sampling started at:", start_time))
-print(paste("MCMC sampling ended at:", end_time))
-
-# Calculate and print total duration
-duration <- end_time - start_time
-print(paste("Total duration of MCMC sampling:", duration))
-
-# Summarize the MCMC Results
-summaryInfo <- smryMCMC_HD(codaSamples = newCodaSamples)
-print(summaryInfo)
+# Call the plotMCMC_HD function with the coda samples
+plotMCMC_HD(codaSamples = codaSamples, data = property_data, xName=c("Area","Bedrooms","Bathrooms","CarParks","PropertyType"), yName="SalePrice")
 
 
-# Plot MCMC results using the custom plot function
-plotMCMC_HD(codaSamples = newCodaSamples, 
-            data = data, 
-            xName = c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType"), 
-            yName = "SalePrice", 
-            saveName = "BayesianModel", saveType = "jpg")
