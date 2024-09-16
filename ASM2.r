@@ -62,7 +62,7 @@ xPred[5,] <- c(250, 3, 2, 1, 1)   # Property 5 (Unit)
 
 property_data <- read.csv("./Assignment2PropertyPrices.csv")
 property_data <- sample_n(property_data, 500)
-y = property_data$SalePrice * 10000  # Sale price in AUD
+y = property_data$SalePrice * 100000  # Sale price in AUD
 x =  as.matrix(property_data[, c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType")])
 # Prepare data for JAGS
 dataList <- list(
@@ -150,13 +150,14 @@ parameters <- c("beta0" ,  "beta" , "sigma", "zbeta0" ,"zbeta", "zsigma", "nu","
 adaptSteps = 500       # Number of adaptation steps
 burnInSteps = 1000     # Number of burn-in steps
 nChains = 2            # Number of chains
-thinSteps = 3          # Thinning parameter
+thinSteps = 4          # Thinning parameter
 numSavedSteps = 10000  # Number of saved MCMC steps
 nIter = ceiling((numSavedSteps * thinSteps) / nChains)  # Total number of iterations per chain run
 
 # Measure the runtime of the MCMC process using system.time()
 runtime <- system.time({
-  runJagsOut <- run.jags(model = "TEMPmodel.txt", 
+  runJagsOut <- run.jags(method="parallel",
+                         model = "TEMPmodel.txt", 
                          data = dataList, 
                          monitor = parameters, 
                          n.chains=nChains ,
