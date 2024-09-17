@@ -61,7 +61,7 @@ xPred[5,] <- c(250, 3, 2, 1, 1)   # Property 5 (Unit)
 # Load your dataset
 
 property_data <- read.csv("./Assignment2PropertyPrices.csv")
-property_data <- sample_n(property_data, 500)
+#property_data <- sample_n(property_data, 500) for parameters tunning
 y = property_data$SalePrice * 100000  # Sale price in AUD
 x =  as.matrix(property_data[, c("Area", "Bedrooms", "Bathrooms", "CarParks", "PropertyType")])
 # Prepare data for JAGS
